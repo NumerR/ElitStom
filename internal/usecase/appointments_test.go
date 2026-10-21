@@ -109,17 +109,19 @@ func TestScheduleIsExposedForTheCalendarEndpoint(t *testing.T) {
 	assert.Equal(t, 30*time.Minute, h.service.Schedule().Slot())
 }
 
-func TestDoctorsListsOnlyActiveDoctors(t *testing.T) {
+func TestDoctorsListsOnlyActiveDoctorsByName(t *testing.T) {
 	h := newApptHarness(t)
 	h.account(domain.RoleDoctor, domain.StatusDisabled, "retired")
+	cuddy := h.account(domain.RoleDoctor, domain.StatusActive, "cuddy")
 
 	doctors, err := h.service.Doctors(context.Background(), h.patient)
 
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []domain.Party{
+	assert.Equal(t, []domain.Party{
+		{ID: cuddy.UserID, FullName: "Full cuddy"},
 		{ID: h.doctor.UserID, FullName: "Full house"},
 		{ID: h.doctor2.UserID, FullName: "Full wilson"},
-	}, doctors)
+	}, doctors, "patients pick a doctor from this list, so it must be alphabetical")
 	assert.Equal(t, maxListLimit, h.users.lastList.Limit)
 
 	t.Run("an unknown role is refused", func(t *testing.T) {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/NumerR/ElitStom/internal/domain"
@@ -75,6 +77,7 @@ func (a *Appointments) Doctors(ctx context.Context, actor Actor) ([]domain.Party
 	for _, doctor := range doctors {
 		parties = append(parties, domain.Party{ID: doctor.ID, FullName: doctor.FullName})
 	}
+	slices.SortStableFunc(parties, func(x, y domain.Party) int { return strings.Compare(x.FullName, y.FullName) })
 	return parties, nil
 }
 

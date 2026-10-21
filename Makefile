@@ -5,10 +5,27 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 # Matches docker-compose.yml. Override for CI: `make test-integration DSN=postgres://...`.
 DSN ?= postgres://dentacore:dentacore@localhost:5432/dentacore?sslmode=disable
 
-.PHONY: run build test test-integration cover vet vet-integration fmt tidy db-up db-down migrate
+.PHONY: run seed build test test-integration cover vet vet-integration fmt tidy db-up db-down migrate web-install web-dev web-build web-lint
 
 run:
 	go run ./cmd/api
+
+# Demo accounts for local work; refuses to run when APP_ENV=production.
+seed:
+	go run ./cmd/seed
+
+web-install:
+	cd web && npm ci
+
+# Vite proxies /api to the API on :8080, so run `make run` alongside.
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
+
+web-lint:
+	cd web && npm run lint
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(APP) ./cmd/api
