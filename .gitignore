@@ -1,0 +1,24 @@
+# Secrets and local config
+.env
+*.env.local
+
+# Build artifacts
+/bin/
+/dist/
+
+# Test and coverage output
+coverage.out
+coverage.html
+*.test
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Frontend
+node_modules/
+web/dist/
+
+# Local database cluster used for development
+/.pgdata/
