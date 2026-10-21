@@ -241,12 +241,13 @@ type readyPinger struct{}
 func (readyPinger) Ping(context.Context) error { return nil }
 
 type api struct {
-	t        *testing.T
-	server   http.Handler
-	users    *memoryUsers
-	sessions *memorySessions
-	secrets  auth.SecretGenerator
-	issuer   *auth.TokenIssuer
+	t            *testing.T
+	server       http.Handler
+	users        *memoryUsers
+	sessions     *memorySessions
+	appointments *memoryAppointments
+	secrets      auth.SecretGenerator
+	issuer       *auth.TokenIssuer
 
 	adminID         string
 	adminTokenValue string
@@ -283,13 +284,25 @@ func newAPIWithPinger(t *testing.T, db handler.Pinger) *api {
 	userService, err := usecase.NewUsers(store, sessions, hasher, fixedClock{})
 	require.NoError(t, err)
 
+	appts := newMemoryAppointments(store)
+	apptService, err := usecase.NewAppointments(appts, store, testSchedule(t), fixedClock{})
+	require.NoError(t, err)
+
 	return &api{
-		t:        t,
-		server:   NewRouter(Deps{DB: db, Log: logger.NewNop(), Tokens: issuer, Auth: authService, Users: userService}),
-		users:    store,
-		sessions: sessions,
-		secrets:  auth.NewSecretGenerator(),
-		issuer:   issuer,
+		t: t,
+		server: NewRouter(Deps{
+			DB:           db,
+			Log:          logger.NewNop(),
+			Tokens:       issuer,
+			Auth:         authService,
+			Users:        userService,
+			Appointments: apptService,
+		}),
+		users:        store,
+		sessions:     sessions,
+		appointments: appts,
+		secrets:      auth.NewSecretGenerator(),
+		issuer:       issuer,
 	}
 }
 
@@ -849,17 +862,17 @@ func TestRouterRejectsIncompleteDependencies(t *testing.T) {
 		{
 			name:      "nothing supplied",
 			deps:      Deps{},
-			wantPanic: "rest: NewRouter is missing database pinger, logger, token issuer, auth service, users service",
+			wantPanic: "rest: NewRouter is missing database pinger, logger, token issuer, auth service, users service, appointments service",
 		},
 		{
 			name:      "no collaborators",
 			deps:      Deps{DB: readyPinger{}, Log: logger.NewNop()},
-			wantPanic: "rest: NewRouter is missing token issuer, auth service, users service",
+			wantPanic: "rest: NewRouter is missing token issuer, auth service, users service, appointments service",
 		},
 		{
 			name:      "no users service",
 			deps:      Deps{DB: readyPinger{}, Log: logger.NewNop(), Tokens: fixedIssuer(t)},
-			wantPanic: "rest: NewRouter is missing auth service, users service",
+			wantPanic: "rest: NewRouter is missing auth service, users service, appointments service",
 		},
 	}
 

@@ -330,6 +330,7 @@ func TestTranslate(t *testing.T) {
 		{name: "no rows", err: pgx.ErrNoRows, wantIs: domain.ErrNotFound},
 		{name: "unique violation", err: &pgconn.PgError{Code: codeUniqueViolation}, wantIs: domain.ErrAlreadyExists},
 		{name: "foreign key", err: &pgconn.PgError{Code: codeForeignKeyViolation}, wantIs: domain.ErrConflict},
+		{name: "overlapping booking", err: &pgconn.PgError{Code: codeExclusionViolation}, wantIs: domain.ErrConflict},
 		{name: "bad uuid text", err: &pgconn.PgError{Code: codeInvalidTextRepresentation}, wantIs: domain.ErrInvalidInput},
 		{name: "client disconnect", err: context.Canceled, wantSame: true},
 		{name: "deadline", err: context.DeadlineExceeded, wantSame: true},

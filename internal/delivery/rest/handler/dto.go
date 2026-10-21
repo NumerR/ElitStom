@@ -60,7 +60,94 @@ type statusRequest struct {
 	Status string `json:"status"`
 }
 
+// bookRequest names the patient only for an admin booking on someone's behalf; a patient's own
+// booking leaves it empty and the use case takes the id from the verified token.
+type bookRequest struct {
+	DoctorID        string `json:"doctor_id"`
+	PatientID       string `json:"patient_id"`
+	StartsAt        string `json:"starts_at"`
+	DurationMinutes *int   `json:"duration_minutes"`
+	Reason          string `json:"reason"`
+}
+
+type cancelRequest struct {
+	Reason string `json:"reason"`
+}
+
+type rescheduleRequest struct {
+	StartsAt        string `json:"starts_at"`
+	DurationMinutes *int   `json:"duration_minutes"`
+}
+
 // --- responses --------------------------------------------------------------
+
+type scheduleResponse struct {
+	Timezone           string `json:"timezone"`
+	OpensAt            string `json:"opens_at"`
+	ClosesAt           string `json:"closes_at"`
+	Workdays           []int  `json:"workdays"`
+	SlotMinutes        int    `json:"slot_minutes"`
+	BookingHorizonDays int    `json:"booking_horizon_days"`
+}
+
+// partyResponse carries a name and an id and nothing else: a doctor listing or an appointment
+// must not become a way to harvest patients' contact details.
+type partyResponse struct {
+	ID       string `json:"id"`
+	FullName string `json:"full_name"`
+}
+
+type doctorsResponse struct {
+	Doctors []partyResponse `json:"doctors"`
+}
+
+type slotResponse struct {
+	StartsAt time.Time `json:"starts_at"`
+	EndsAt   time.Time `json:"ends_at"`
+}
+
+type slotsResponse struct {
+	Date  string         `json:"date"`
+	Slots []slotResponse `json:"slots"`
+}
+
+type appointmentResponse struct {
+	ID           string        `json:"id"`
+	Patient      partyResponse `json:"patient"`
+	Doctor       partyResponse `json:"doctor"`
+	StartsAt     time.Time     `json:"starts_at"`
+	EndsAt       time.Time     `json:"ends_at"`
+	Status       string        `json:"status"`
+	Reason       string        `json:"reason"`
+	CancelReason string        `json:"cancel_reason"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+}
+
+type listAppointmentsResponse struct {
+	Appointments []appointmentResponse `json:"appointments"`
+	Limit        int                   `json:"limit"`
+	Offset       int                   `json:"offset"`
+}
+
+func newPartyResponse(party domain.Party) partyResponse {
+	return partyResponse{ID: party.ID, FullName: party.FullName}
+}
+
+func newAppointmentResponse(appt domain.Appointment) appointmentResponse {
+	return appointmentResponse{
+		ID:           appt.ID,
+		Patient:      newPartyResponse(appt.Patient),
+		Doctor:       newPartyResponse(appt.Doctor),
+		StartsAt:     appt.StartsAt,
+		EndsAt:       appt.EndsAt,
+		Status:       string(appt.Status),
+		Reason:       appt.Reason,
+		CancelReason: appt.CancelReason,
+		CreatedAt:    appt.CreatedAt,
+		UpdatedAt:    appt.UpdatedAt,
+	}
+}
 
 // userResponse is the only projection of a domain.User that reaches a client. It has no
 // password field at all, so forgetting to strip the hash cannot become a leak.

@@ -65,6 +65,7 @@ const (
 	codeUniqueViolation           = "23505"
 	codeForeignKeyViolation       = "23503"
 	codeInvalidTextRepresentation = "22P02"
+	codeExclusionViolation        = "23P01"
 )
 
 // translate turns a driver error into a domain sentinel so the use case and transport layers
@@ -88,6 +89,8 @@ func translate(err error, what string) error {
 			return fmt.Errorf("%w: %s already exists", domain.ErrAlreadyExists, what)
 		case codeForeignKeyViolation:
 			return fmt.Errorf("%w: %s references a missing account", domain.ErrConflict, what)
+		case codeExclusionViolation:
+			return fmt.Errorf("%w: %s overlaps an existing booking", domain.ErrConflict, what)
 		case codeInvalidTextRepresentation:
 			// Reaching the server with a malformed uuid means validation upstream was skipped.
 			return fmt.Errorf("%w: %s is malformed", domain.ErrInvalidInput, what)

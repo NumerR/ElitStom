@@ -79,3 +79,48 @@ type RefreshTokenStore interface {
 	RevokeFamily(ctx context.Context, familyID string, at time.Time) error
 	RevokeAllForUser(ctx context.Context, userID string, at time.Time) error
 }
+
+// AppointmentFilter narrows a listing. Empty ids and zero times mean "no predicate"; From and
+// To select appointments that overlap [From, To), so a visit running across From still shows.
+type AppointmentFilter struct {
+	PatientID  string
+	DoctorID   string
+	Status     domain.AppointmentStatus
+	From       time.Time
+	To         time.Time
+	Descending bool
+	Limit      int
+	Offset     int
+}
+
+// StatusChange is a compare-and-set: it applies only while the stored status is still From.
+type StatusChange struct {
+	ID           string
+	From         domain.AppointmentStatus
+	To           domain.AppointmentStatus
+	CancelReason string
+}
+
+// RescheduleChange moves an appointment and resets it to scheduled, but only while it still has
+// the status and start time the caller read — two concurrent moves cannot both win.
+type RescheduleChange struct {
+	ID           string
+	From         domain.AppointmentStatus
+	FromStartsAt time.Time
+	StartsAt     time.Time
+	EndsAt       time.Time
+}
+
+// AppointmentRepository is the booking persistence port. Create and Reschedule return
+// domain.ErrConflict when the slot overlaps a live booking of the same doctor or patient;
+// Transition and Reschedule return it when the row changed since it was read.
+type AppointmentRepository interface {
+	Create(ctx context.Context, appt domain.Appointment) (domain.Appointment, error)
+	ByID(ctx context.Context, id string) (domain.Appointment, error)
+	List(ctx context.Context, filter AppointmentFilter) ([]domain.Appointment, error)
+	Transition(ctx context.Context, change StatusChange) (domain.Appointment, error)
+	Reschedule(ctx context.Context, change RescheduleChange) (domain.Appointment, error)
+
+	// Busy lists the intervals a doctor's live bookings occupy within window.
+	Busy(ctx context.Context, doctorID string, window domain.Interval) ([]domain.Interval, error)
+}

@@ -36,7 +36,7 @@ const envIntegrationDSN = "DENTACORE_TEST_DATABASE_URL"
 
 var (
 	uuidText   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	migrations = []string{"0001_users.up.sql", "0002_refresh_tokens.up.sql"}
+	migrations = []string{"0001_users.up.sql", "0002_refresh_tokens.up.sql", "0003_appointments.up.sql"}
 )
 
 type harness struct {
@@ -85,7 +85,8 @@ func setupHarness(t *testing.T) *harness {
 	require.NoError(t, err, "parse dsn")
 	// Set before the pool exists: RuntimeParams are applied per connection at connect time,
 	// so changing them after Ping would leave the first connections on the wrong schema.
-	poolCfg.ConnConfig.RuntimeParams["search_path"] = schema
+	// public stays on the path for the btree_gist operator classes the migrations install there.
+	poolCfg.ConnConfig.RuntimeParams["search_path"] = schema + ",public"
 	poolCfg.MaxConns = 8
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
@@ -113,7 +114,7 @@ func provision(t *testing.T, ctx context.Context, dsn, schema string) {
 		}
 	}()
 
-	for _, statement := range []string{"CREATE SCHEMA " + schema, "SET search_path TO " + schema} {
+	for _, statement := range []string{"CREATE SCHEMA " + schema, "SET search_path TO " + schema + ",public"} {
 		_, err := conn.Exec(ctx, statement)
 		require.NoErrorf(t, err, "provision: %q", statement)
 	}

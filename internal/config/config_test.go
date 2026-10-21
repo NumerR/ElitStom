@@ -19,6 +19,8 @@ var knownKeys = []string{
 	"PG_SSLMODE", "PG_POOL_MAX_CONNS", "PG_POOL_MIN_CONNS",
 	"PG_CONN_MAX_LIFETIME", "PG_CONN_MAX_IDLE_TIME", "PG_CONNECT_TIMEOUT", "PG_STATEMENT_TIMEOUT",
 	"JWT_SECRET", "JWT_ACCESS_TTL", "JWT_REFRESH_TTL", "JWT_ISSUER", "JWT_AUDIENCE", "BCRYPT_COST",
+	"CLINIC_TIMEZONE", "CLINIC_OPENS_AT", "CLINIC_CLOSES_AT", "CLINIC_WORKDAYS",
+	"APPOINTMENT_SLOT", "BOOKING_HORIZON_DAYS",
 }
 
 func isolateEnv(t *testing.T) {
@@ -86,6 +88,14 @@ func defaultConfig() Config {
 			Issuer:          "dentacore",
 			Audience:        "dentacore-api",
 			BcryptCost:      12,
+		},
+		Clinic: Clinic{
+			Timezone:    "Europe/Moscow",
+			OpensAt:     "09:00",
+			ClosesAt:    "20:00",
+			Workdays:    []int{1, 2, 3, 4, 5, 6},
+			Slot:        30 * time.Minute,
+			HorizonDays: 60,
 		},
 	}
 }
@@ -207,6 +217,27 @@ func TestLoadOverrides(t *testing.T) {
 			expect: func(c *Config) {
 				c.Auth.Issuer = "dentacore"
 				c.Auth.Audience = "dentacore-api"
+			},
+		},
+		{
+			name: "clinic calendar",
+			env: requiredEnv(map[string]string{
+				"CLINIC_TIMEZONE":      "Asia/Yekaterinburg",
+				"CLINIC_OPENS_AT":      "08:30",
+				"CLINIC_CLOSES_AT":     "17:30",
+				"CLINIC_WORKDAYS":      " 1, 2,3 ,4,5 ",
+				"APPOINTMENT_SLOT":     "45m",
+				"BOOKING_HORIZON_DAYS": "14",
+			}),
+			expect: func(c *Config) {
+				c.Clinic = Clinic{
+					Timezone:    "Asia/Yekaterinburg",
+					OpensAt:     "08:30",
+					ClosesAt:    "17:30",
+					Workdays:    []int{1, 2, 3, 4, 5},
+					Slot:        45 * time.Minute,
+					HorizonDays: 14,
+				}
 			},
 		},
 		{
@@ -408,6 +439,51 @@ func TestLoadValidationErrors(t *testing.T) {
 			env:     requiredEnv(map[string]string{"BCRYPT_COST": "18"}),
 			wantErr: []string{"BCRYPT_COST: must be between 10 and 15, got 18"},
 		},
+		{
+			name:    "unknown clinic timezone",
+			env:     requiredEnv(map[string]string{"CLINIC_TIMEZONE": "Mars/Olympus_Mons"}),
+			wantErr: []string{"CLINIC_TIMEZONE: must be an IANA zone"},
+		},
+		{
+			name:    "malformed opening time",
+			env:     requiredEnv(map[string]string{"CLINIC_OPENS_AT": "9am"}),
+			wantErr: []string{"CLINIC_OPENS_AT: must be a time like 09:00"},
+		},
+		{
+			name:    "clinic closes before it opens",
+			env:     requiredEnv(map[string]string{"CLINIC_OPENS_AT": "18:00", "CLINIC_CLOSES_AT": "09:00"}),
+			wantErr: []string{"CLINIC_CLOSES_AT: must be later than opens_at"},
+		},
+		{
+			name:    "non-numeric workday",
+			env:     requiredEnv(map[string]string{"CLINIC_WORKDAYS": "1,2,mon"}),
+			wantErr: []string{`CLINIC_WORKDAYS: must be a comma-separated list of integers, got "1,2,mon"`},
+		},
+		{
+			name:    "workday outside the ISO range",
+			env:     requiredEnv(map[string]string{"CLINIC_WORKDAYS": "0,1"}),
+			wantErr: []string{"CLINIC_WORKDAYS: must be ISO weekdays"},
+		},
+		{
+			name:    "malformed slot",
+			env:     requiredEnv(map[string]string{"APPOINTMENT_SLOT": "half-hour"}),
+			wantErr: []string{"APPOINTMENT_SLOT: must be a duration"},
+		},
+		{
+			name:    "slot that does not divide the opening hours",
+			env:     requiredEnv(map[string]string{"APPOINTMENT_SLOT": "25m"}),
+			wantErr: []string{"APPOINTMENT_SLOT: must divide the opening hours evenly"},
+		},
+		{
+			name:    "non-numeric booking horizon",
+			env:     requiredEnv(map[string]string{"BOOKING_HORIZON_DAYS": "forever"}),
+			wantErr: []string{"BOOKING_HORIZON_DAYS: must be an integer"},
+		},
+		{
+			name:    "booking horizon beyond a year",
+			env:     requiredEnv(map[string]string{"BOOKING_HORIZON_DAYS": "400"}),
+			wantErr: []string{"BOOKING_HORIZON_DAYS: must be between 1 and 365"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -593,6 +669,18 @@ func TestParseEnvironment(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestClinicScheduleMirrorsTheConfiguration(t *testing.T) {
+	schedule, err := defaultConfig().Clinic.Schedule()
+
+	require.NoError(t, err)
+	assert.Equal(t, "Europe/Moscow", schedule.Location().String())
+	assert.Equal(t, "09:00", schedule.Opens().String())
+	assert.Equal(t, "20:00", schedule.Closes().String())
+	assert.Equal(t, []int{1, 2, 3, 4, 5, 6}, schedule.Workdays())
+	assert.Equal(t, 30*time.Minute, schedule.Slot())
+	assert.Equal(t, 60, schedule.HorizonDays())
 }
 
 func TestGetIntRejectsPartialNumbers(t *testing.T) {

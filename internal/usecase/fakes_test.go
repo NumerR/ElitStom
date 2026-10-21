@@ -143,7 +143,11 @@ func (f *fakeUsers) List(_ context.Context, filter UserFilter) ([]domain.User, e
 
 	listed := make([]domain.User, 0, len(ids))
 	for _, id := range ids {
-		listed = append(listed, f.byID[id])
+		user := f.byID[id]
+		if (filter.Role != "" && user.Role != filter.Role) || (filter.Status != "" && user.Status != filter.Status) {
+			continue
+		}
+		listed = append(listed, user)
 	}
 	return listed, nil
 }

@@ -23,6 +23,8 @@ type Deps struct {
 	Tokens usecase.TokenIssuer
 	Auth   *usecase.Auth
 	Users  *usecase.Users
+
+	Appointments *usecase.Appointments
 }
 
 // missing names the collaborators that were not supplied, for the startup check.
@@ -42,6 +44,9 @@ func (d Deps) missing() []string {
 	}
 	if d.Users == nil {
 		missing = append(missing, "users service")
+	}
+	if d.Appointments == nil {
+		missing = append(missing, "appointments service")
 	}
 	return missing
 }
@@ -66,6 +71,7 @@ func NewRouter(d Deps) http.Handler { // A missing collaborator is a wiring bug,
 	health := handler.NewHealth(d.DB, d.Log)
 	auth := handler.NewAuth(d.Auth, d.Log)
 	users := handler.NewUsers(d.Users, d.Log)
+	appts := handler.NewAppointments(d.Appointments, d.Log)
 
 	r.Get("/healthz", health.Liveness)
 	r.Get("/readyz", health.Readiness)
@@ -84,6 +90,23 @@ func NewRouter(d Deps) http.Handler { // A missing collaborator is a wiring bug,
 
 			authenticated.Get("/users/me", users.Me)
 			authenticated.Patch("/users/me", users.UpdateProfile)
+
+			// Role rules for appointments depend on the appointment itself (whose visit, which
+			// status, how close to the start), so they live in the use case, not in a route guard.
+			authenticated.Get("/clinic/schedule", appts.Schedule)
+			authenticated.Get("/doctors", appts.Doctors)
+			authenticated.Get("/doctors/{id}/slots", appts.Slots)
+
+			authenticated.Route("/appointments", func(a chi.Router) {
+				a.Get("/", appts.List)
+				a.Post("/", appts.Book)
+				a.Get("/{id}", appts.Get)
+				a.Post("/{id}/cancel", appts.Cancel)
+				a.Post("/{id}/confirm", appts.Confirm)
+				a.Post("/{id}/complete", appts.Complete)
+				a.Post("/{id}/no-show", appts.NoShow)
+				a.Post("/{id}/reschedule", appts.Reschedule)
+			})
 
 			// Admin-only. Keeping the guard on the group rather than in each handler means a
 			// new admin route is denied by default instead of by remembering to add a check.

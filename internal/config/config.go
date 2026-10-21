@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/NumerR/ElitStom/internal/domain"
 )
 
 // ErrInvalidConfig wraps every validation failure reported by Load.
@@ -47,6 +49,22 @@ type Config struct {
 	Postgres Postgres
 	Log      Log
 	Auth     Auth
+	Clinic   Clinic
+}
+
+// Clinic carries the booking calendar as configured. Load has already proven that
+// Schedule succeeds, so callers may treat its error as unreachable only after Load.
+type Clinic struct {
+	Timezone    string
+	OpensAt     string
+	ClosesAt    string
+	Workdays    []int
+	Slot        time.Duration
+	HorizonDays int
+}
+
+func (c Clinic) Schedule() (domain.Schedule, error) {
+	return domain.NewSchedule(c.Timezone, c.OpensAt, c.ClosesAt, c.Workdays, c.Slot, c.HorizonDays)
 }
 
 // Auth groups the credential and token policy. JWTSecret is deliberately kept out of
@@ -117,11 +135,12 @@ func Load() (Config, error) {
 	httpCfg, httpErr := loadHTTP()
 	pgCfg, pgErr := loadPostgres(env)
 	authCfg, authErr := loadAuth()
+	clinicCfg, clinicErr := loadClinic()
 
-	if err := errors.Join(envErr, logErr, httpErr, pgErr, authErr); err != nil {
+	if err := errors.Join(envErr, logErr, httpErr, pgErr, authErr, clinicErr); err != nil {
 		return Config{}, fmt.Errorf("%w: %w", ErrInvalidConfig, err)
 	}
-	return Config{Env: env, HTTP: httpCfg, Postgres: pgCfg, Log: logCfg, Auth: authCfg}, nil
+	return Config{Env: env, HTTP: httpCfg, Postgres: pgCfg, Log: logCfg, Auth: authCfg, Clinic: clinicCfg}, nil
 }
 
 func parseEnvironment(raw string) (Environment, error) {
@@ -339,6 +358,55 @@ func loadAuth() (Auth, error) {
 	return cfg, errors.Join(errs...)
 }
 
+var clinicEnvKeys = map[string]string{
+	"timezone":             "CLINIC_TIMEZONE",
+	"opens_at":             "CLINIC_OPENS_AT",
+	"closes_at":            "CLINIC_CLOSES_AT",
+	"workdays":             "CLINIC_WORKDAYS",
+	"slot":                 "APPOINTMENT_SLOT",
+	"booking_horizon_days": "BOOKING_HORIZON_DAYS",
+}
+
+func loadClinic() (Clinic, error) {
+	var errs []error
+
+	cfg := Clinic{
+		Timezone: getString("CLINIC_TIMEZONE", "Europe/Moscow"),
+		OpensAt:  getString("CLINIC_OPENS_AT", "09:00"),
+		ClosesAt: getString("CLINIC_CLOSES_AT", "20:00"),
+	}
+
+	workdays, err := getIntList("CLINIC_WORKDAYS", []int{1, 2, 3, 4, 5, 6})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("CLINIC_WORKDAYS: %w", err))
+	}
+	cfg.Workdays = workdays
+
+	cfg.Slot, err = getDuration("APPOINTMENT_SLOT", 30*time.Minute)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("APPOINTMENT_SLOT: %w", err))
+	}
+	cfg.HorizonDays, err = getInt("BOOKING_HORIZON_DAYS", 60)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("BOOKING_HORIZON_DAYS: %w", err))
+	}
+
+	// Parse failures above already explain themselves; re-validating defaults would only add noise.
+	if len(errs) == 0 {
+		if _, err := cfg.Schedule(); err != nil {
+			var ve *domain.ValidationError
+			if !errors.As(err, &ve) {
+				return cfg, fmt.Errorf("clinic schedule: %w", err)
+			}
+			for _, f := range ve.Fields {
+				errs = append(errs, fmt.Errorf("%s: %s", clinicEnvKeys[f.Field], f.Message))
+			}
+		}
+	}
+
+	return cfg, errors.Join(errs...)
+}
+
 func getString(key, def string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
@@ -368,6 +436,23 @@ func getInt32(key string, def int32) (int32, error) {
 		return def, fmt.Errorf("must be an integer, got %q", raw)
 	}
 	return int32(v), nil
+}
+
+func getIntList(key string, def []int) ([]int, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def, nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]int, 0, len(parts))
+	for _, part := range parts {
+		v, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil {
+			return def, fmt.Errorf("must be a comma-separated list of integers, got %q", raw)
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }
 
 func getDuration(key string, def time.Duration) (time.Duration, error) {

@@ -9,6 +9,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	// The image is built with CGO_ENABLED=0 on a minimal base that has no zoneinfo, and the
+	// clinic calendar cannot work without its timezone.
+	_ "time/tzdata"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -128,5 +131,23 @@ func routerDeps(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (rest.D
 		return rest.Deps{}, err
 	}
 
-	return rest.Deps{DB: pool, Log: log, Tokens: issuer, Auth: authService, Users: userService}, nil
+	// config.Load validated the calendar already; rebuilding it here only fails on a code change.
+	schedule, err := cfg.Clinic.Schedule()
+	if err != nil {
+		return rest.Deps{}, err
+	}
+
+	apptService, err := usecase.NewAppointments(repopostgres.NewAppointments(executor), users, schedule, clock)
+	if err != nil {
+		return rest.Deps{}, err
+	}
+
+	return rest.Deps{
+		DB:           pool,
+		Log:          log,
+		Tokens:       issuer,
+		Auth:         authService,
+		Users:        userService,
+		Appointments: apptService,
+	}, nil
 }
