@@ -153,7 +153,8 @@ func (h *harness) newAccount(t *testing.T, role domain.Role) domain.User {
 	require.NoError(t, err, "hash password")
 
 	user, err := h.users.Create(h.ctx, domain.User{
-		Email:        fmt.Sprintf("it-%s-%s@example.com", role, h.suffix),
+		// A per-call suffix: a test may need several accounts of the same role.
+		Email:        fmt.Sprintf("it-%s-%s-%s@example.com", role, h.suffix, randomHex(t, 4)),
 		FullName:     "Integration Patient",
 		Phone:        "+15550100",
 		Role:         role,
